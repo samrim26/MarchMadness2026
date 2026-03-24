@@ -12,14 +12,15 @@ export function pointsForRound(
 }
 
 /**
- * Calculate how many points an entry has earned so far based on completed games.
+ * Current score = prior round points (locked in from R1/R2) +
+ * points earned in Sweet 16 and beyond based on completed results.
  */
 export function calculateCurrentScore(
   entry: Entry,
   games: Game[],
   results: Results
 ): number {
-  let score = 0;
+  let score = entry.priorPoints ?? 0;
   for (const game of games) {
     const pick = entry.picks[game.id];
     if (!pick) continue;
@@ -31,26 +32,24 @@ export function calculateCurrentScore(
 }
 
 /**
- * Calculate the maximum score an entry can still achieve.
- * Includes current score + points from all picks whose team is still alive.
+ * Max possible score = prior points + current Sweet 16+ score +
+ * points from all remaining alive picks.
  */
 export function calculateMaxPossibleScore(
   entry: Entry,
   games: Game[],
   results: Results
 ): number {
-  let score = 0;
+  let score = entry.priorPoints ?? 0;
   for (const game of games) {
     const pick = entry.picks[game.id];
     if (!pick) continue;
 
     if (results[game.id] !== undefined) {
-      // Game is complete — only count if correct
       if (results[game.id] === pick) {
         score += game.pointsValue;
       }
     } else {
-      // Game not yet played — count if pick is still alive
       if (isPickStillAlive(pick, game.id, games, results)) {
         score += game.pointsValue;
       }
@@ -60,15 +59,15 @@ export function calculateMaxPossibleScore(
 }
 
 /**
- * Score an entry against a COMPLETE tournament outcome.
- * Used during simulation — the outcome map contains all game results.
+ * Score an entry against a COMPLETE tournament outcome (used in simulation).
+ * Must include priorPoints so standings comparisons are correct.
  */
 export function scoreEntryAgainstOutcome(
   entry: Entry,
   games: Game[],
   outcome: Results
 ): number {
-  let score = 0;
+  let score = entry.priorPoints ?? 0;
   for (const game of games) {
     const pick = entry.picks[game.id];
     if (!pick) continue;

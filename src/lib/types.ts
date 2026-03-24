@@ -43,6 +43,11 @@ export type Picks = Record<string, string>;
 export interface Entry {
   id: string;
   displayName: string;
+  /**
+   * Points locked in from rounds played before Sweet 16 (rounds 1 & 2).
+   * Added to all score calculations so standings reflect total pool points.
+   */
+  priorPoints: number;
   picks: Picks;
 }
 
