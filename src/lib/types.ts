@@ -73,8 +73,11 @@ export interface EntryAnalytics {
   soloWinProbability: number;
   tieForFirstProbability: number;
   firstOrTieProbability: number;
+  secondPlaceProbability: number;
+  poolEV: number; // expected net dollar value given current state
   numberOfWinningScenarios: number;
   numberOfTieScenarios: number;
+  numberOfSecondPlaceScenarios: number;
   totalScenarios: number;
   eliminated: boolean;
   rank: number;
@@ -116,6 +119,52 @@ export interface ScenarioDelta {
     after: number;
     delta: number;
   }[];
+}
+
+// ─── Live Odds & Hedging ──────────────────────────────────────────────────────
+
+export interface TeamOdds {
+  teamId: string;
+  teamName: string;
+  decimalOdds: number;  // e.g. 2.50 means bet $1 to win $1.50 profit
+  americanOdds: number; // e.g. +150 or -200
+  impliedProbability: number; // 1 / decimalOdds
+  bookmaker: string;
+}
+
+export interface GameOdds {
+  gameId: string | null; // matched to our bracket game id, null if unmatched
+  apiMatchId: string;
+  team1: TeamOdds;
+  team2: TeamOdds;
+  commenceTime: string;
+}
+
+/** A specific hedge recommendation for one entry in one game */
+export interface HedgeBet {
+  gameId: string;
+  gameLabel: string;
+  betOnTeamId: string;
+  betOnTeamName: string;
+  betAmount: number;         // dollars to wager at sportsbook
+  decimalOdds: number;
+  americanOdds: number;
+  guaranteedFloor: number;   // net $ if you place this hedge (worst case)
+  evIfNoBet: number;         // expected net $ without hedge
+  evWithHedge: number;       // expected net $ with hedge (locked in)
+  isPositiveEV: boolean;     // is the guaranteed floor > current EV?
+  poolEVIfPickWins: number;  // EV from pool if your pick wins this game
+  poolEVIfPickLoses: number; // EV from pool if your pick loses this game
+  bookmaker: string;
+}
+
+export interface PersonHedgeData {
+  personName: string;
+  entryIds: string[];
+  displayNames: string[];
+  combinedPoolEV: number;        // total expected value across both brackets
+  hedgeOpportunities: HedgeBet[];
+  bestHedge: HedgeBet | null;
 }
 
 // ─── Computed State ───────────────────────────────────────────────────────────
