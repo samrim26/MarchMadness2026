@@ -7,15 +7,14 @@ import { PRIZE_CONFIG, parseBracketName } from "@/data/prizeConfig";
 import { fetchLiveOdds, matchOddsToGames } from "@/lib/odds";
 import { computePersonHedgeData } from "@/lib/hedging";
 import { computeEntryProbabilities } from "@/lib/simulation";
-import { getGamesWithKnownParticipants } from "@/lib/bracket";
 import type { HedgeBet, PersonHedgeData } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Hedging Guide | March Madness 2026",
 };
 
-// Revalidate every 10 minutes so odds stay fresh
-export const revalidate = 600;
+// Always render fresh so env vars and live odds are never stale-cached
+export const dynamic = "force-dynamic";
 
 export default async function HedgingPage() {
   const analytics = computeEntryProbabilities(
@@ -25,8 +24,8 @@ export default async function HedgingPage() {
     SCORING_SETTINGS
   );
 
-  // Fetch live odds (null if no API key configured)
-  const rawOdds = await fetchLiveOdds();
+  // Fetch live odds
+  const { odds: rawOdds, error: oddsError } = await fetchLiveOdds();
   const liveOdds = rawOdds ? matchOddsToGames(rawOdds, RESULTS) : [];
   const hasLiveOdds = liveOdds.length > 0;
 
@@ -34,7 +33,6 @@ export default async function HedgingPage() {
     ? computePersonHedgeData(ENTRIES, GAMES, RESULTS, SCORING_SETTINGS, liveOdds)
     : [];
 
-  const actionableGames = getGamesWithKnownParticipants(GAMES, RESULTS);
   const totalPot = PRIZE_CONFIG.totalPot;
   const anyHedgeOpportunity = personData.some((p) => p.bestHedge !== null);
 
@@ -106,26 +104,35 @@ export default async function HedgingPage() {
         </p>
       </div>
 
-      {/* No API key warning */}
+      {/* No live odds — show reason */}
       {!hasLiveOdds && (
-        <div className="rounded-xl border border-yellow-800/50 bg-yellow-900/10 p-5">
-          <div className="font-semibold text-yellow-300 mb-2">
+        <div className="rounded-xl border border-yellow-800/50 bg-yellow-900/10 p-5 space-y-3">
+          <div className="font-semibold text-yellow-300">
             Live odds not connected
           </div>
-          <p className="text-sm text-slate-300">
-            To see hedge amounts, add your Odds API key to{" "}
-            <code className="text-blue-400">.env.local</code>:
-          </p>
-          <pre className="mt-2 rounded bg-slate-900 p-3 text-sm font-mono text-slate-300 overflow-x-auto">
-            ODDS_API_KEY=your_key_here
-          </pre>
-          <p className="text-sm text-slate-400 mt-2">
-            Get a free key at{" "}
-            <span className="text-blue-400">the-odds-api.com</span> (500
-            requests/month free). The page auto-refreshes odds every 10
-            minutes.
-          </p>
-          {/* Show EV table without odds */}
+          {oddsError && (
+            <div className="rounded bg-slate-900 p-3 text-sm font-mono text-red-400">
+              {oddsError.type}: {oddsError.message}
+            </div>
+          )}
+          {oddsError?.type === "no_key" && (
+            <p className="text-sm text-slate-300">
+              Add <code className="text-blue-400">ODDS_API_KEY</code> to Vercel →
+              Settings → Environment Variables, then redeploy.
+            </p>
+          )}
+          {oddsError?.type === "no_games" && (
+            <p className="text-sm text-slate-300">
+              API key is valid but no Sweet 16 games are posted yet. Check back
+              closer to tip-off — odds usually appear 24–48 hrs before games.
+            </p>
+          )}
+          {oddsError?.type === "api_error" && (
+            <p className="text-sm text-slate-300">
+              Double-check the key value in Vercel environment variables matches
+              exactly what the-odds-api.com shows in your account dashboard.
+            </p>
+          )}
           <EVOnlyTable analytics={analytics} />
         </div>
       )}

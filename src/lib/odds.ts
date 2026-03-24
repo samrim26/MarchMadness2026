@@ -9,7 +9,6 @@ import type { GameOdds, TeamOdds } from "@/lib/types";
  */
 
 const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
-const SPORT = "basketball_ncaab";
 
 // ─── Team name normalization ──────────────────────────────────────────────────
 // The Odds API uses full official names; we use short IDs.
@@ -83,30 +82,64 @@ interface OddsApiGame {
 
 // ─── Fetching ─────────────────────────────────────────────────────────────────
 
+export interface OddsError {
+  type: "no_key" | "api_error" | "no_games" | "parse_error";
+  message: string;
+  status?: number;
+}
+
 /**
  * Fetch live moneyline odds for all upcoming NCAAB games.
- * Returns null if API key is missing or fetch fails.
+ * Returns { odds, error } — error is set when something went wrong.
  */
-export async function fetchLiveOdds(): Promise<GameOdds[] | null> {
+export async function fetchLiveOdds(): Promise<{
+  odds: GameOdds[] | null;
+  error: OddsError | null;
+}> {
   const apiKey = process.env.ODDS_API_KEY;
-  if (!apiKey) return null;
-
-  try {
-    const url =
-      `${ODDS_API_BASE}/sports/${SPORT}/odds/` +
-      `?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=decimal&bookmakers=draftkings,fanduel,betmgm`;
-
-    const res = await fetch(url, {
-      next: { revalidate: 600 }, // cache 10 minutes
-    });
-
-    if (!res.ok) return null;
-
-    const data: OddsApiGame[] = await res.json();
-    return parseOddsResponse(data);
-  } catch {
-    return null;
+  if (!apiKey) {
+    return { odds: null, error: { type: "no_key", message: "ODDS_API_KEY environment variable not set." } };
   }
+
+  // Try tournament-specific key first, fall back to general NCAAB
+  const sportsToTry = ["basketball_ncaab", "basketball_ncaab_championship_winner"];
+
+  for (const sport of sportsToTry) {
+    try {
+      const url =
+        `${ODDS_API_BASE}/sports/${sport}/odds/` +
+        `?apiKey=${apiKey}&regions=us&markets=h2h&oddsFormat=decimal`;
+
+      const res = await fetch(url, { cache: "no-store" });
+
+      if (res.status === 401) {
+        return { odds: null, error: { type: "api_error", message: "Invalid API key (401). Check your ODDS_API_KEY in Vercel environment variables.", status: 401 } };
+      }
+      if (res.status === 422) {
+        // This sport key doesn't exist — try next
+        continue;
+      }
+      if (!res.ok) {
+        return { odds: null, error: { type: "api_error", message: `API returned ${res.status}`, status: res.status } };
+      }
+
+      const data: OddsApiGame[] = await res.json();
+      if (!Array.isArray(data)) {
+        return { odds: null, error: { type: "parse_error", message: "Unexpected API response format." } };
+      }
+
+      const parsed = parseOddsResponse(data);
+      if (parsed.length === 0) {
+        return { odds: [], error: { type: "no_games", message: `API returned 0 games for sport "${sport}". Games may not be posted yet.` } };
+      }
+
+      return { odds: parsed, error: null };
+    } catch (e) {
+      return { odds: null, error: { type: "parse_error", message: String(e) } };
+    }
+  }
+
+  return { odds: null, error: { type: "no_games", message: "No matching sport keys found in The Odds API." } };
 }
 
 function parseOddsResponse(data: OddsApiGame[]): GameOdds[] {
